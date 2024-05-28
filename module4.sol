@@ -1,45 +1,60 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Etherium is ERC20, Ownable {
-    uint256 private _maxOwnerMint;
-    mapping(address => uint256) private _ownerMintedAmounts;
+contract DegenToken is ERC20, Ownable {
+    event VoucherCreated(address indexed creator, string voucherName, uint256 quantity, uint256 price);
+    event VoucherRedeemed(address indexed redeemer, string voucherName, uint256 quantity);
 
-    constructor(address owner) ERC20("Etherium", "ETH") Ownable(owner) {
-        // Initialize the maximum owner mint to 0
-        _maxOwnerMint = 300;
+    struct Voucher {
+        uint256 quantity;
+        uint256 price;
     }
 
-    modifier onlyUnderMaxOwnerMint(uint256 amount) {
-        require(_ownerMintedAmounts[msg.sender] + amount <= _maxOwnerMint, "Exceeds max owner mint");
-        _;
-    }
+    mapping(string => Voucher) public vouchers;
 
-    function mint(address to, uint256 amount) public onlyOwner onlyUnderMaxOwnerMint(amount) {
+    constructor(address initialOwner) Ownable(initialOwner) ERC20("Degen", "DGN") {}
+
+    function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
-        _ownerMintedAmounts[msg.sender] += amount;
     }
 
-    function burn(uint256 amount) public {
+    function burn(uint256 amount) external {
         _burn(msg.sender, amount);
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
-        return super.transfer(to, amount);
+        _transfer(_msgSender(), to, amount);
+        return true;
     }
 
-    function setMaxOwnerMint(uint256 maxOwnerMint) public onlyOwner {
-        _maxOwnerMint = maxOwnerMint;
+    function createVoucher(string memory voucherName, uint256 quantity, uint256 price) external onlyOwner {
+        require(quantity > 0, "Quantity must be greater than zero");
+        require(price > 0, "Price must be greater than zero");
+
+        vouchers[voucherName] = Voucher({
+            quantity: quantity,
+            price: price
+        });
+
+        emit VoucherCreated(msg.sender, voucherName, quantity, price);
     }
 
-    function getMaxOwnerMint() public view returns (uint256) {
-        return _maxOwnerMint;
+    function redeemVoucher(string memory voucherName, uint256 quantity) external {
+        Voucher storage voucher = vouchers[voucherName];
+        require(voucher.quantity >= quantity, "Not enough vouchers available");
+        require(voucher.price * quantity <= balanceOf(msg.sender), "Insufficient balance");
+
+        _burn(msg.sender, voucher.price * quantity);
+        voucher.quantity -= quantity;
+
+        emit VoucherRedeemed(msg.sender, voucherName, quantity);
     }
 
-    function getOwnerMintedAmount(address owner) public view returns (uint256) {
-        return _ownerMintedAmounts[owner];
+    function checkVoucherBalance(address account, string memory voucherName) external view returns (uint256) {
+        return balanceOf(account) / vouchers[voucherName].price;
     }
 }
+
